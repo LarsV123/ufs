@@ -9,3 +9,7 @@
 /itkufs/settings/local.py
 /media/
 /static/
+
+
+# Local stuff
+.idea/
