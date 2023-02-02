@@ -9,13 +9,17 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('accounting', '0003_python3'),
+        ("accounting", "0003_python3"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='transaction',
-            name='date',
-            field=models.DateField(default=datetime.date.today, help_text='May be used for date of the transaction if not today.', verbose_name='date'),
+            model_name="transaction",
+            name="date",
+            field=models.DateField(
+                default=datetime.date.today,
+                help_text="May be used for date of the transaction if not today.",
+                verbose_name="date",
+            ),
         ),
     ]
