@@ -12,7 +12,7 @@ from itkufs.common.decorators import (
     limit_to_admin,
 )
 
-from itkufs.common.forms import ExportTransactionsForm
+from itkufs.common.forms import DateRangeForm
 from itkufs.accounting.models import (
     Account,
     Group,
@@ -23,7 +23,7 @@ from itkufs.accounting.models import (
 @limit_to_admin
 def export_transactions(request: HttpRequest, group: Group, is_admin=False):
 
-    form = ExportTransactionsForm(data=request.GET)
+    form = DateRangeForm(data=request.GET)
     filename = f"{group.slug}-transactions.csv"
 
     if form.is_valid():

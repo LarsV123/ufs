@@ -68,7 +68,6 @@ class Group(models.Model):
 
         # Create default accounts
         if not self.account_set.count():
-
             # TODO change this into a magic loop?
             bank = Account(
                 name=ugettext("Bank"),
@@ -176,6 +175,57 @@ class Group(models.Model):
             )
             .order_by("transaction__date")
         )
+
+    def get_balance_change(self, from_date: str, to_date: str):
+        """
+        Returns the change in balance for each group account in the specified
+        period, i.e. the sum of committed transactions.
+        """
+        # This is done in a somewhat verbose way to avoid n+1 queries.
+        accounts = {
+            a.id: {
+                "id": a.id,
+                "normal_balance": 0,
+                "name": a.name,
+                "is_group_account": a.group_account,
+                "type": a.type,
+            }
+            for a in Account.objects.filter(group=self)
+        }
+
+        for a in self.group_account_set:
+            accounts[a.id]["url"] = a.get_absolute_url()
+
+        balances = (
+            Account.objects.select_related("transactionentry")
+            .filter(
+                transactionentry__transaction__group=self,
+                transactionentry__transaction__date__gte=from_date,
+                transactionentry__transaction__date__lte=to_date,
+                transactionentry__transaction__state=Transaction.COMMITTED_STATE,
+            )
+            .annotate(
+                balance=models.Sum("transactionentry__debit")
+                - models.Sum("transactionentry__credit"),
+            )
+            .values(
+                "id",
+                "name",
+                "owner",
+                "short_name",
+                "type",
+                "group_account",
+                "balance",
+            )
+        )
+
+        for a in balances:
+            if a["type"] in (Account.ASSET_ACCOUNT, Account.EXPENSE_ACCOUNT):
+                accounts[a["id"]]["normal_balance"] = a["balance"]
+            else:
+                accounts[a["id"]]["normal_balance"] = a["balance"] * -1
+
+        return accounts
 
 
 CONFIRMED_BALANCE_SQL = """
@@ -843,7 +893,6 @@ class TransactionEntry(models.Model):
             and old_balance > self.account.group.block_limit
             and new_balance < self.account.group.block_limit
         ):
-
             subject = "Svartelistet i µFS"
             msg = (
                 f"Dette er en automatisk melding om at du har blitt "

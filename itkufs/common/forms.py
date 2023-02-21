@@ -192,7 +192,19 @@ class RoleAccountForm(Form):
             raise Exception("Please supply a group kwarg for RoleAccountForm")
 
 
-class ExportTransactionsForm(forms.Form):
+class DatePickerForm(forms.Form):
+    """Form for selecting a date."""
+
+    date = forms.DateField(
+        label=_("Date"),
+        required=True,
+        error_messages={"required": _("Please enter a date")},
+    )
+
+
+class DateRangeForm(forms.Form):
+    """Form for selecting a date range."""
+
     from_date = forms.DateField(
         label=_("From date"),
         required=True,
