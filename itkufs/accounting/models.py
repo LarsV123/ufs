@@ -228,7 +228,9 @@ class AccountManager(models.Manager):
             )
         )
 
-    def with_historical_balance(self, at_date):
+
+class HistoricalAccountManager(models.Manager):
+    def with_normalized_balance(self, at_date):
         """
         Returns a queryset of accounts with their normalized balance as of the
         given date.
@@ -263,20 +265,20 @@ class AccountManager(models.Manager):
                 )
             ),
         ).annotate(
-            raw_balance=ExpressionWrapper(
+            balance=ExpressionWrapper(
                 F("total_debit") - F("total_credit"),
                 output_field=models.DecimalField(),
             ),
             normal_balance=Case(
-                When(raw_balance__isnull=True, then=Value(0)),
+                When(balance__isnull=True, then=Value(0)),
                 When(
                     type__in=[
                         Account.ASSET_ACCOUNT,
                         Account.EXPENSE_ACCOUNT,
                     ],
-                    then="raw_balance",
+                    then="balance",
                 ),
-                default=F("raw_balance") * -1,
+                default=F("balance") * -1,
                 output_field=models.DecimalField(),
             ),
         )
@@ -297,6 +299,7 @@ class Account(models.Model):
     )
 
     objects = AccountManager()
+    historical_objects = HistoricalAccountManager()
 
     name = models.CharField(_("name"), max_length=100)
     short_name = models.CharField(_("short name"), max_length=100, blank=True)

@@ -264,7 +264,7 @@ def balance(request: HttpRequest, group: Group, is_admin=False):
 
     # Get account balances at the given date for relevant accounts
     balances = (
-        Account.objects.with_historical_balance(date)
+        Account.historical_objects.with_normalized_balance(date)
         .filter(group=group)
         .exclude(type=Account.INCOME_ACCOUNT)
         .exclude(type=Account.EXPENSE_ACCOUNT)
@@ -368,7 +368,7 @@ def income(request: HttpRequest, group: Group, is_admin=False):
 
     # Find the balance for each account at the start of the period
     starting_balances = (
-        Account.objects.with_historical_balance(from_date)
+        Account.historical_objects.with_normalized_balance(from_date)
         .filter(group=group)
         .filter(
             Q(type=Account.INCOME_ACCOUNT) | Q(type=Account.EXPENSE_ACCOUNT)
@@ -378,7 +378,7 @@ def income(request: HttpRequest, group: Group, is_admin=False):
 
     # Find the change in balance for each account at the end of the period
     current_balances = (
-        Account.objects.with_historical_balance(to_date)
+        Account.historical_objects.with_normalized_balance(to_date)
         .filter(group=group)
         .filter(
             Q(type=Account.INCOME_ACCOUNT) | Q(type=Account.EXPENSE_ACCOUNT)
