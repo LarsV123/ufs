@@ -11,6 +11,9 @@ from django.db.models import (
     Value,
     F,
     ExpressionWrapper,
+    Subquery,
+    DecimalField,
+    OuterRef,
 )
 from django.contrib.auth.models import User
 from django.urls import reverse
@@ -230,7 +233,48 @@ class AccountManager(models.Manager):
 
 
 class HistoricalAccountManager(models.Manager):
-    def with_normalized_balance(self, at_date):
+    def with_balance(self, group: int, at_date: str):
+        """
+        Returns a queryset of accounts with their confirmed balance as of the
+        given date.
+        """
+        committed_transactions_at_date = Q(
+            transactionentry__transaction__state=Transaction.COMMITTED_STATE
+        ) & Q(transactionentry__transaction__date__lte=at_date)
+
+        return (
+            self.filter(group=group)
+            .annotate(
+                total_debit=Sum(
+                    Case(
+                        When(
+                            committed_transactions_at_date,
+                            then="transactionentry__credit",
+                        ),
+                        default=Value(0),
+                        output_field=models.DecimalField(),
+                    )
+                ),
+                total_credit=Sum(
+                    Case(
+                        When(
+                            committed_transactions_at_date,
+                            then="transactionentry__debit",
+                        ),
+                        default=Value(0),
+                        output_field=models.DecimalField(),
+                    )
+                ),
+            )
+            .annotate(
+                balance=ExpressionWrapper(
+                    F("total_debit") - F("total_credit"),
+                    output_field=models.DecimalField(),
+                )
+            )
+        )
+
+    def with_normalized_balance(self, group: int, at_date: str):
         """
         Returns a queryset of accounts with their normalized balance as of the
         given date.
@@ -239,36 +283,7 @@ class HistoricalAccountManager(models.Manager):
         will have a positive balance if their credit amount is greater than
         their debit amount.
         """
-        committed_transactions_at_date = Q(
-            transactionentry__transaction__state=Transaction.COMMITTED_STATE
-        ) & Q(transactionentry__transaction__date__lte=at_date)
-
-        return self.annotate(
-            total_credit=Sum(
-                Case(
-                    When(
-                        committed_transactions_at_date,
-                        then="transactionentry__credit",
-                    ),
-                    default=Value(0),
-                    output_field=models.DecimalField(),
-                )
-            ),
-            total_debit=Sum(
-                Case(
-                    When(
-                        committed_transactions_at_date,
-                        then="transactionentry__debit",
-                    ),
-                    default=Value(0),
-                    output_field=models.DecimalField(),
-                )
-            ),
-        ).annotate(
-            balance=ExpressionWrapper(
-                F("total_debit") - F("total_credit"),
-                output_field=models.DecimalField(),
-            ),
+        return self.with_balance(group, at_date).annotate(
             normal_balance=Case(
                 When(balance__isnull=True, then=Value(0)),
                 When(
@@ -280,8 +295,26 @@ class HistoricalAccountManager(models.Manager):
                 ),
                 default=F("balance") * -1,
                 output_field=models.DecimalField(),
+            )
+        )
+
+    def with_balance_change(self, group: int, from_date: str, to_date: str):
+        """
+        Returns a queryset of accounts with their change in normalized balance
+        between the given dates.
+        """
+        starting_balances = self.with_normalized_balance(group, from_date)
+
+        ending_balances = self.with_normalized_balance(group, to_date).annotate(
+            balance_change=F("normal_balance")
+            - Subquery(
+                starting_balances.filter(slug=OuterRef("slug")).values(
+                    "normal_balance"
+                )[:1],
+                output_field=DecimalField(),
             ),
         )
+        return ending_balances
 
 
 class Account(models.Model):

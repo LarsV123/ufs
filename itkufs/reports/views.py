@@ -5,7 +5,7 @@ import datetime
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import transaction as db_transaction
-from django.db.models import Q, F, Subquery, OuterRef, DecimalField
+from django.db.models import Q
 from django.forms.models import inlineformset_factory
 from django.http import Http404, HttpResponseRedirect, HttpResponse, HttpRequest
 from django.shortcuts import render
@@ -264,8 +264,9 @@ def balance(request: HttpRequest, group: Group, is_admin=False):
 
     # Get account balances at the given date for relevant accounts
     balances = (
-        Account.historical_objects.with_normalized_balance(date)
-        .filter(group=group)
+        Account.historical_objects.with_normalized_balance(
+            group=group, at_date=date
+        )
         .exclude(type=Account.INCOME_ACCOUNT)
         .exclude(type=Account.EXPENSE_ACCOUNT)
         .prefetch_related("group")
@@ -366,31 +367,12 @@ def income(request: HttpRequest, group: Group, is_admin=False):
     else:
         raise ValueError("Invalid form data.")
 
-    # Find the balance for each account at the start of the period
-    starting_balances = (
-        Account.historical_objects.with_normalized_balance(from_date)
-        .filter(group=group)
-        .filter(
-            Q(type=Account.INCOME_ACCOUNT) | Q(type=Account.EXPENSE_ACCOUNT)
-        )
-        .prefetch_related("group")
-    )
-
-    # Find the change in balance for each account at the end of the period
     current_balances = (
-        Account.historical_objects.with_normalized_balance(to_date)
-        .filter(group=group)
+        Account.historical_objects.with_balance_change(
+            group=group, from_date=from_date, to_date=to_date
+        )
         .filter(
             Q(type=Account.INCOME_ACCOUNT) | Q(type=Account.EXPENSE_ACCOUNT)
-        )
-        .annotate(
-            balance_change=F("normal_balance")
-            - Subquery(
-                starting_balances.filter(slug=OuterRef("slug")).values(
-                    "normal_balance"
-                )[:1],
-                output_field=DecimalField(),
-            ),
         )
         .prefetch_related("group")
     )
