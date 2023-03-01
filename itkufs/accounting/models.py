@@ -249,7 +249,7 @@ class HistoricalAccountManager(models.Manager):
                     Case(
                         When(
                             committed_transactions_at_date,
-                            then="transactionentry__credit",
+                            then="transactionentry__debit",
                         ),
                         default=Value(0),
                         output_field=models.DecimalField(),
@@ -259,7 +259,7 @@ class HistoricalAccountManager(models.Manager):
                     Case(
                         When(
                             committed_transactions_at_date,
-                            then="transactionentry__debit",
+                            then="transactionentry__credit",
                         ),
                         default=Value(0),
                         output_field=models.DecimalField(),
