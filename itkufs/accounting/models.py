@@ -298,6 +298,12 @@ class HistoricalAccountManager(models.Manager):
             )
         )
 
+    def get_balance_changes(self, filters: Q):
+        """
+        Returns a queryset of accounts with balance changes in the
+        """
+        pass
+
     def with_balance_change(self, group: int, from_date: str, to_date: str):
         """
         Returns a queryset of accounts with their change in normalized balance
@@ -321,28 +327,28 @@ class HistoricalAccountManager(models.Manager):
                     F("sum_debit") - F("sum_credit"),
                     output_field=models.DecimalField(),
                 ),
+                balance_change=Case(
+                    When(difference__isnull=True, then=Value(0)),
+                    When(
+                        type__in=[
+                            Account.ASSET_ACCOUNT,
+                            Account.EXPENSE_ACCOUNT,
+                        ],
+                        then="difference",
+                    ),
+                    default=F("difference") * -1,
+                    output_field=models.DecimalField(),
+                ),
             )
             .filter(id=OuterRef("pk"))
         )
 
         # Create a queryset of all accounts with their balance change
         all_accounts = self.filter(group=group).annotate(
-            difference=Subquery(
-                accounts_with_balance.values("difference"),
+            balance_change=Subquery(
+                accounts_with_balance.values("balance_change"),
                 output_field=models.DecimalField(),
                 default=0,
-            ),
-            balance_change=Case(
-                When(difference__isnull=True, then=Value(0)),
-                When(
-                    type__in=[
-                        Account.ASSET_ACCOUNT,
-                        Account.EXPENSE_ACCOUNT,
-                    ],
-                    then="difference",
-                ),
-                default=F("difference") * -1,
-                output_field=models.DecimalField(),
             ),
         )
 
