@@ -306,8 +306,138 @@ class HistoricalAccountManager(models.Manager):
         committed = Q(
             transactionentry__transaction__state=Transaction.COMMITTED_STATE
         )
-        at_start = Q(transactionentry__transaction__date__lte=from_date)
+        at_start = Q(transactionentry__transaction__date__gte=from_date)
         at_end = Q(transactionentry__transaction__date__lte=to_date)
+
+        filter = committed & at_start & at_end
+
+        # This basically works, but can we add filters?
+        # accounts_with_balance = self.filter(group=group).annotate(
+        #     credit=Sum(
+        #         "transactionentry__credit",
+        #         output_field=models.DecimalField(),
+        #     ),
+        #     debit=Sum(
+        #         "transactionentry__debit",
+        #         output_field=models.DecimalField(),
+        #     ),
+        #     foo_balance=ExpressionWrapper(
+        #         F("debit") - F("credit"),
+        #         output_field=models.DecimalField(),
+        #     ),
+        #     balance=Case(
+        #         When(foo_balance__isnull=True, then=Value(0)),
+        #         default=F("foo_balance"),
+        #     ),
+        # )
+
+        accounts_with_balance = (
+            self.filter(group=group)
+            .filter(filter)
+            .annotate(
+                credit=Sum(
+                    "transactionentry__credit",
+                    output_field=models.DecimalField(),
+                ),
+                debit=Sum(
+                    "transactionentry__debit",
+                    output_field=models.DecimalField(),
+                ),
+                foo_balance=ExpressionWrapper(
+                    F("debit") - F("credit"),
+                    output_field=models.DecimalField(),
+                ),
+                balance=Case(
+                    When(foo_balance__isnull=True, then=Value(0)),
+                    default=F("foo_balance"),
+                ),
+            )
+        )
+        for a in accounts_with_balance:
+            print(f"{a.credit=} {a.debit=} {a.short_name=} {a.balance=}")
+            if a.balance == 0:
+                print("SUCCESS!")
+
+        # credit_change_per_account = (
+        #     TransactionEntry.objects.filter(filter)
+        #     .filter(account=OuterRef("pk"))
+        #     .values("account")
+        #     .annotate(
+        #         sum_credit=Sum("credit", output_field=models.DecimalField())
+        #     )
+        #     .values("sum_credit")
+        # )
+        # debit_change_per_account = (
+        #     TransactionEntry.objects.filter(account=OuterRef("pk"))
+        #     .values("account")
+        #     .annotate(
+        #         sum_debit=Sum("debit", output_field=models.DecimalField())
+        #     )
+        #     .values("sum_debit")
+        # )
+        # .annotate(
+        #     balance_change=Value(0, output_field=models.DecimalField())
+        # )
+        # balance_change = (
+        #     self.filter(group=group)
+        #     .annotate(
+        #         sum_credit=Subquery(
+        #             credit_change_per_account,
+        #             default=0,
+        #             output_field=models.DecimalField(),
+        #         ),
+        #         sum_debit=Subquery(
+        #             debit_change_per_account,
+        #             default=0,
+        #             output_field=models.DecimalField(),
+        #         ),
+        #     )
+        #     .annotate(
+        #         total_credit=Case(
+        #             When(sum_credit__isnull=True, then=Value(0)),
+        #             default=F("sum_credit"),
+        #             output_field=models.DecimalField(),
+        #         ),
+        #         total_debit=Case(
+        #             When(sum_debit__isnull=True, then=Value(0)),
+        #             default=F("sum_debit"),
+        #             output_field=models.DecimalField(),
+        #         ),
+        # )
+        # .annotate(
+        #     raw_balance_change=ExpressionWrapper(
+        #         F("total_debit") - F("total_credit"),
+        #         output_field=models.DecimalField(),
+        #     )
+        # )
+        # .annotate(
+        #     balance_change=ExpressionWrapper(
+        #         F("total_debit") - F("total_credit"),
+        #         output_field=models.DecimalField(),
+        #     )
+        # )
+        # .annotate(
+        #     balance_change=Case(
+        #         When(raw_balance_change__isnull=True, then=Value(0)),
+        #         When(
+        #             type__in=[
+        #                 Account.ASSET_ACCOUNT,
+        #                 Account.EXPENSE_ACCOUNT,
+        #             ],
+        #             then="raw_balance_change",
+        #         ),
+        #         default=F("raw_balance_change") * -1,
+        #         output_field=models.DecimalField(),
+        #     )
+        # )
+        # )
+        # for a in balance_change:
+        #     print(
+        #         f"{a.short_name=} {a.balance_change=} {a.total_debit=} {a.total_credit=}"
+        #     )
+        #     print(
+        #         f"{a.short_name=} {a.balance_change=} {a.sum_credit=} {a.total_credit=}"
+        #     )
 
         # This is an ugly query (and the SQL generated from it is even worse),
         # but it is very fast. Make sure to profile any changes to it on
