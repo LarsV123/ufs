@@ -343,20 +343,41 @@ class HistoricalAccountManager(models.Manager):
                     "transactionentry__debit",
                     output_field=models.DecimalField(),
                 ),
-                foo_balance=ExpressionWrapper(
+                difference=ExpressionWrapper(
                     F("debit") - F("credit"),
                     output_field=models.DecimalField(),
                 ),
-                balance=Case(
-                    When(foo_balance__isnull=True, then=Value(0)),
-                    default=F("foo_balance"),
-                ),
+                # balance=Case(
+                #     When(foo_balance__isnull=True, then=Value(0)),
+                #     default=F("foo_balance"),
+                # ),
             )
+            .filter(id=OuterRef("pk"))
         )
-        for a in accounts_with_balance:
-            print(f"{a.credit=} {a.debit=} {a.short_name=} {a.balance=}")
-            if a.balance == 0:
-                print("SUCCESS!")
+
+        all_accounts = self.filter(group=group).annotate(
+            difference=Subquery(
+                accounts_with_balance.values("difference"),
+                output_field=models.DecimalField(),
+                default=0,
+            ),
+            balance_change=Case(
+                When(difference__isnull=True, then=Value(0)),
+                When(
+                    type__in=[
+                        Account.ASSET_ACCOUNT,
+                        Account.EXPENSE_ACCOUNT,
+                    ],
+                    then="difference",
+                ),
+                default=F("difference") * -1,
+                output_field=models.DecimalField(),
+            ),
+        )
+        # for a in all_accounts:
+        #     print(f"{a.id=} {a.short_name=} {a.balance=} {a.normal_balance=}")
+
+        return all_accounts
 
         # credit_change_per_account = (
         #     TransactionEntry.objects.filter(filter)
@@ -442,88 +463,88 @@ class HistoricalAccountManager(models.Manager):
         # This is an ugly query (and the SQL generated from it is even worse),
         # but it is very fast. Make sure to profile any changes to it on
         # a large data set.
-        balance_change = (
-            self.filter(group=group)
-            .annotate(
-                total_debit_before=Sum(
-                    Case(
-                        When(
-                            committed & at_start,
-                            then="transactionentry__debit",
-                        ),
-                        default=Value(0),
-                        output_field=models.DecimalField(),
-                    )
-                ),
-                total_credit_before=Sum(
-                    Case(
-                        When(
-                            committed & at_start,
-                            then="transactionentry__credit",
-                        ),
-                        default=Value(0),
-                        output_field=models.DecimalField(),
-                    )
-                ),
-                total_debit_after=Sum(
-                    Case(
-                        When(
-                            committed & at_end,
-                            then="transactionentry__debit",
-                        ),
-                        default=Value(0),
-                        output_field=models.DecimalField(),
-                    )
-                ),
-                total_credit_after=Sum(
-                    Case(
-                        When(
-                            committed & at_end,
-                            then="transactionentry__credit",
-                        ),
-                        default=Value(0),
-                        output_field=models.DecimalField(),
-                    )
-                ),
-            )
-            .annotate(
-                balance_before=ExpressionWrapper(
-                    F("total_debit_before") - F("total_credit_before"),
-                    output_field=models.DecimalField(),
-                ),
-                balance_after=ExpressionWrapper(
-                    F("total_debit_after") - F("total_credit_after"),
-                    output_field=models.DecimalField(),
-                ),
-            )
-            .annotate(
-                raw_balance_change=Case(
-                    When(balance_before__isnull=True, then=F("balance_after")),
-                    When(
-                        balance_after__isnull=True,
-                        then=F("balance_before") * -1,
-                    ),
-                    default=F("balance_after") - F("balance_before"),
-                    output_field=models.DecimalField(),
-                )
-            )
-            .annotate(
-                balance_change=Case(
-                    When(raw_balance_change__isnull=True, then=Value(0)),
-                    When(
-                        type__in=[
-                            Account.ASSET_ACCOUNT,
-                            Account.EXPENSE_ACCOUNT,
-                        ],
-                        then="raw_balance_change",
-                    ),
-                    default=F("raw_balance_change") * -1,
-                    output_field=models.DecimalField(),
-                )
-            )
-        )
+        # balance_change = (
+        #     self.filter(group=group)
+        #     .annotate(
+        #         total_debit_before=Sum(
+        #             Case(
+        #                 When(
+        #                     committed & at_start,
+        #                     then="transactionentry__debit",
+        #                 ),
+        #                 default=Value(0),
+        #                 output_field=models.DecimalField(),
+        #             )
+        #         ),
+        #         total_credit_before=Sum(
+        #             Case(
+        #                 When(
+        #                     committed & at_start,
+        #                     then="transactionentry__credit",
+        #                 ),
+        #                 default=Value(0),
+        #                 output_field=models.DecimalField(),
+        #             )
+        #         ),
+        #         total_debit_after=Sum(
+        #             Case(
+        #                 When(
+        #                     committed & at_end,
+        #                     then="transactionentry__debit",
+        #                 ),
+        #                 default=Value(0),
+        #                 output_field=models.DecimalField(),
+        #             )
+        #         ),
+        #         total_credit_after=Sum(
+        #             Case(
+        #                 When(
+        #                     committed & at_end,
+        #                     then="transactionentry__credit",
+        #                 ),
+        #                 default=Value(0),
+        #                 output_field=models.DecimalField(),
+        #             )
+        #         ),
+        #     )
+        #     .annotate(
+        #         balance_before=ExpressionWrapper(
+        #             F("total_debit_before") - F("total_credit_before"),
+        #             output_field=models.DecimalField(),
+        #         ),
+        #         balance_after=ExpressionWrapper(
+        #             F("total_debit_after") - F("total_credit_after"),
+        #             output_field=models.DecimalField(),
+        #         ),
+        #     )
+        #     .annotate(
+        #         raw_balance_change=Case(
+        #             When(balance_before__isnull=True, then=F("balance_after")),
+        #             When(
+        #                 balance_after__isnull=True,
+        #                 then=F("balance_before") * -1,
+        #             ),
+        #             default=F("balance_after") - F("balance_before"),
+        #             output_field=models.DecimalField(),
+        #         )
+        #     )
+        #     .annotate(
+        #         balance_change=Case(
+        #             When(raw_balance_change__isnull=True, then=Value(0)),
+        #             When(
+        #                 type__in=[
+        #                     Account.ASSET_ACCOUNT,
+        #                     Account.EXPENSE_ACCOUNT,
+        #                 ],
+        #                 then="raw_balance_change",
+        #             ),
+        #             default=F("raw_balance_change") * -1,
+        #             output_field=models.DecimalField(),
+        #         )
+        #     )
+        # )
 
-        return balance_change
+        # return balance_change
 
 
 class Account(models.Model):
