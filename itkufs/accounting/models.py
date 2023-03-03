@@ -299,7 +299,7 @@ class HistoricalAccountManager(models.Manager):
             )
         )
 
-    def with_balance_change(self, group: int, from_date: str, to_date: str):
+    def with_balance_change(self, from_date: str, to_date: str):
         """
         Returns a queryset of accounts with their change in normalized balance
         between the given dates.
@@ -312,29 +312,25 @@ class HistoricalAccountManager(models.Manager):
         )
 
         # Get changes in balance for accounts with transactions in the period
-        accounts_with_balance = (
-            self.filter(group=group)
-            .filter(filters)
-            .annotate(
-                sum_debit=Sum("transactionentry__debit"),
-                sum_credit=Sum("transactionentry__credit"),
-                difference=ExpressionWrapper(
-                    F("sum_debit") - F("sum_credit"),
-                    output_field=models.DecimalField(),
+        accounts_with_balance = self.filter(filters).annotate(
+            sum_debit=Sum("transactionentry__debit"),
+            sum_credit=Sum("transactionentry__credit"),
+            difference=ExpressionWrapper(
+                F("sum_debit") - F("sum_credit"),
+                output_field=models.DecimalField(),
+            ),
+            normal_balance=Case(
+                When(difference__isnull=True, then=Value(0)),
+                When(
+                    type__in=[
+                        Account.ASSET_ACCOUNT,
+                        Account.EXPENSE_ACCOUNT,
+                    ],
+                    then="difference",
                 ),
-                normal_balance=Case(
-                    When(difference__isnull=True, then=Value(0)),
-                    When(
-                        type__in=[
-                            Account.ASSET_ACCOUNT,
-                            Account.EXPENSE_ACCOUNT,
-                        ],
-                        then="difference",
-                    ),
-                    default=F("difference") * -1,
-                    output_field=models.DecimalField(),
-                ),
-            )
+                default=F("difference") * -1,
+                output_field=models.DecimalField(),
+            ),
         )
         return accounts_with_balance
 

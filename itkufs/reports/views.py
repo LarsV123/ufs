@@ -263,33 +263,38 @@ def balance(request: HttpRequest, group: Group, is_admin=False):
     else:
         raise ValueError("Invalid form data.")
 
-    # Get account balances at the given date for relevant accounts
+    # Common filters for all queries in this view
+    filters = (
+        Q(group=group)
+        & ~Q(type=Account.EXPENSE_ACCOUNT)
+        & ~Q(type=Account.INCOME_ACCOUNT)
+    )
+
+    # Get all group accounts
+    group_accounts = (
+        Account.objects.filter(filters)
+        .filter(group_account=True)
+        .select_related("group")
+    )
+
+    # Get account balances at the given date for group accounts
     balances = (
         Account.historical_objects.with_balance_change(
-            group=group, from_date="1929-10-01", to_date=date
+            from_date="1929-10-01", to_date=date
         )
-        .filter(group_account=True)
-        .exclude(type=Account.EXPENSE_ACCOUNT)
-        .exclude(type=Account.INCOME_ACCOUNT)
-        .prefetch_related("group")
+        .filter(filters)
+        .select_related("group")
     )
+
     if hide_empty_active:
         balances = balances.exclude(Q(active=True) & Q(normal_balance=0))
 
     if hide_empty_inactive:
         balances = balances.exclude(Q(active=False) & Q(normal_balance=0))
 
-    # Get all accounts for the group
-    group_accounts = (
-        Account.objects.filter(group=group)
-        .filter(group_account=True)
-        .exclude(type=Account.EXPENSE_ACCOUNT)
-        .exclude(type=Account.INCOME_ACCOUNT)
-        .prefetch_related("group")
-    )
     balances = {b["id"]: b for b in balances.values()}
 
-    # Balance sheet data struct
+    # Balance sheet data structs
     accounts = {
         "as": [],
         "li": [],
@@ -303,6 +308,7 @@ def balance(request: HttpRequest, group: Group, is_admin=False):
         "li_eq": 0,
     }
 
+    # Aggregate group account assets and liabilities
     for account in group_accounts:
         balance = 0
         if account.id in balances:
@@ -323,11 +329,10 @@ def balance(request: HttpRequest, group: Group, is_admin=False):
     # Aggregate member account liabilities
     members = (
         Account.historical_objects.with_balance_change(
-            group=group, from_date="1929-10-01", to_date=date
+            from_date="1929-10-01", to_date=date
         )
+        .filter(filters)
         .filter(group_account=False)
-        .exclude(type=Account.EXPENSE_ACCOUNT)
-        .exclude(type=Account.INCOME_ACCOUNT)
         .aggregate(
             positive_sum=Sum(
                 Case(
