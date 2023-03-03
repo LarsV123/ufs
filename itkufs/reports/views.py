@@ -7,7 +7,7 @@ from django.contrib.auth.decorators import login_required
 from django.db import transaction as db_transaction
 from django.db.models import Value, F, Q, DecimalField
 from django.db.models.functions import Coalesce
-from django.forms.models import inlineformset_factory
+from django.forms.models import inlineformset_factory, model_to_dict
 from django.http import Http404, HttpResponseRedirect, HttpResponse, HttpRequest
 from django.shortcuts import render
 from django.template.defaultfilters import slugify
@@ -267,12 +267,10 @@ def balance(request: HttpRequest, group: Group, is_admin=False):
     balances = (
         Account.historical_objects.with_balance_change(
             group=group, from_date="1929-10-01", to_date=date
-        ).filter(group_account=True)
-        # .exclude(type=Account.EXPENSE_ACCOUNT)
-        # .filter(
-        #     Q(type=Account.ASSET_ACCOUNT)
-        #     | Q(type=Account.EQUITY_ACCOUNT)
-        #     | Q(type=Account.LIABILITY_ACCOUNT)
+        )
+        .filter(group_account=True)
+        .exclude(type=Account.EXPENSE_ACCOUNT)
+        .exclude(type=Account.INCOME_ACCOUNT)
         .prefetch_related("group")
     )
     if hide_empty_active:
@@ -282,27 +280,16 @@ def balance(request: HttpRequest, group: Group, is_admin=False):
         balances = balances.exclude(Q(active=False) & Q(normal_balance=0))
 
     # Get all accounts for the group
-    # accounts = Account.objects.filter(group=group).annotate(
-    #     normal_balance=Value(0, output_field=DecimalField())
-    # )
+    group_accounts = (
+        Account.objects.filter(group=group)
+        .filter(group_account=True)
+        .exclude(type=Account.EXPENSE_ACCOUNT)
+        .exclude(type=Account.INCOME_ACCOUNT)
+        .prefetch_related("group")
+    )
     # accounts = {a.id: a for a in accounts}
     # ids = [a["id"] for a in balances.values()]
     balances = {b["id"]: b for b in balances.values()}
-    ids = list(balances.keys())
-    accounts = Account.objects.filter(pk__in=ids)
-
-    for b in balances:
-        print(b)
-
-    for account in accounts:
-        # print(f"{account} {account.id=}")
-        # print(f"{balances[account.id]=}")
-        print(f"{account=} {balances[account.id]['normal_balance']=}")
-        # if account.id in balances:
-        #     print("found balance")
-        #     account.normal_balance = balances[account.id]["normal_balance"]
-        # print(f"{account.name=} {account.normal_balance=}")
-    print("done")
 
     # Balance sheet data struct
     accounts = {
@@ -317,6 +304,21 @@ def balance(request: HttpRequest, group: Group, is_admin=False):
         "eq": 0,
         "li_eq": 0,
     }
+
+    for account in group_accounts:
+        balance = 0
+        if account.id in balances:
+            balance = balances[account.id]["normal_balance"]
+
+        if balance == 0 and hide_empty_active and account.active:
+            continue
+        if balance == 0 and hide_empty_inactive and not account.active:
+            continue
+
+        account = model_to_dict(account)
+        account["normal_balance"] = balance
+        accounts[account["type"].lower()].append(account)
+        account_sums[account["type"].lower()] += balance
 
     # Aggregate member account liabilities
     # TODO: Get these as separate queries
