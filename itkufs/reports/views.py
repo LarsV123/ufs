@@ -313,8 +313,10 @@ def balance(request: HttpRequest, group: Group, is_admin=False):
         if balance == 0 and hide_empty_inactive and not account.active:
             continue
 
+        url = account.get_absolute_url()
         account = model_to_dict(account)
         account["normal_balance"] = balance
+        account["get_absolute_url"] = url
         accounts[account["type"].lower()].append(account)
         account_sums[account["type"].lower()] += balance
 
