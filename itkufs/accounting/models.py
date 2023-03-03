@@ -334,47 +334,9 @@ class HistoricalAccountManager(models.Manager):
                     default=F("difference") * -1,
                     output_field=models.DecimalField(),
                 ),
-                # normal_balance=Case(
-                #     When(difference__isnull=True, then=Value(0)),
-                #     When(
-                #         type__in=[
-                #             Account.ASSET_ACCOUNT,
-                #             Account.EXPENSE_ACCOUNT,
-                #         ],
-                #         then="difference",
-                #     ),
-                #     default=F("difference") * -1,
-                #     output_field=models.DecimalField(),
-                # ),
             )
-            # .filter(id=OuterRef("id"))
         )
-        # This bit is fast
         return accounts_with_balance
-
-        # return self.filter(group=group).annotate(
-        #     balance_change=Value(0, output_field=models.DecimalField()),
-        #     normal_balance=Value(0, output_field=models.DecimalField()),
-        # )
-
-        # Create a queryset of all accounts with their balance change
-        # This bit is slow...
-        all_accounts = (
-            self.filter(group=group)
-            .annotate(
-                # balance_change=Subquery(
-                #     accounts_with_balance.values("balance_change"),
-                #     output_field=models.DecimalField(),
-                # ),
-                # normal_balance=F("balance_change"),
-                # normal_balance=Coalesce("balance_change", 0),
-                normal_balance=Value(0, output_field=models.DecimalField()),
-                balance_change=Value(0, output_field=models.DecimalField()),
-            )
-            .values()
-        )
-
-        return all_accounts
 
 
 class Account(models.Model):

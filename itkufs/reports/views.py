@@ -5,7 +5,7 @@ import datetime
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import transaction as db_transaction
-from django.db.models import Value, F, Q, DecimalField
+from django.db.models import Value, F, Q, DecimalField, Sum, Case, When
 from django.db.models.functions import Coalesce
 from django.forms.models import inlineformset_factory, model_to_dict
 from django.http import Http404, HttpResponseRedirect, HttpResponse, HttpRequest
@@ -321,32 +321,42 @@ def balance(request: HttpRequest, group: Group, is_admin=False):
         account_sums[account["type"].lower()] += balance
 
     # Aggregate member account liabilities
-    # TODO: Get these as separate queries
-    member_negative_sum = 0
-    member_positive_sum = 0
-
-    # for account in balances:
-    #     # print(
-    #     #     f"{account.name=} {account.balance_change=} {account.normal_balance=}"
-    #     # )
-    #     if account["group_account"]:
-    #         accounts[account["type"].lower()].append(account)
-    #         account_sums[account["type"].lower()] += account.normal_balance
-    #     else:
-    #         if account.normal_balance > 0:
-    #             member_positive_sum += account.normal_balance
-    #         else:
-    #             member_negative_sum += account.normal_balance
+    members = (
+        Account.historical_objects.with_balance_change(
+            group=group, from_date="1929-10-01", to_date=date
+        )
+        .filter(group_account=False)
+        .exclude(type=Account.EXPENSE_ACCOUNT)
+        .exclude(type=Account.INCOME_ACCOUNT)
+        .aggregate(
+            positive_sum=Sum(
+                Case(
+                    When(normal_balance__gt=0, then="normal_balance"), default=0
+                )
+            ),
+            negative_sum=Sum(
+                Case(
+                    When(normal_balance__lt=0, then="normal_balance"), default=0
+                )
+            ),
+        )
+    )
 
     # Accumulated member accounts liabilities
     accounts["li"].append(
-        {"name": _("Positive member accounts"), "balance": member_positive_sum}
+        {
+            "name": _("Positive member accounts"),
+            "balance": members["positive_sum"],
+        }
     )
     accounts["li"].append(
-        {"name": _("Negative member accounts"), "balance": member_negative_sum}
+        {
+            "name": _("Negative member accounts"),
+            "balance": members["negative_sum"],
+        }
     )
-    account_sums["li"] += member_positive_sum
-    account_sums["li"] += member_negative_sum
+    account_sums["li"] += members["positive_sum"]
+    account_sums["li"] += members["negative_sum"]
 
     # Total liabilities and equities
     account_sums["li_eq"] = account_sums["li"] + account_sums["eq"]
