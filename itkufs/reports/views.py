@@ -5,7 +5,8 @@ import datetime
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import transaction as db_transaction
-from django.db.models import Q
+from django.db.models import Value, F, Q, DecimalField
+from django.db.models.functions import Coalesce
 from django.forms.models import inlineformset_factory
 from django.http import Http404, HttpResponseRedirect, HttpResponse, HttpRequest
 from django.shortcuts import render
@@ -264,20 +265,42 @@ def balance(request: HttpRequest, group: Group, is_admin=False):
 
     # Get account balances at the given date for relevant accounts
     balances = (
-        Account.historical_objects.with_normalized_balance(
-            group=group, at_date=date
+        Account.historical_objects.with_balance_change(
+            group=group, from_date="1929-10-01", to_date=date
         )
-        .exclude(type=Account.INCOME_ACCOUNT)
-        .exclude(type=Account.EXPENSE_ACCOUNT)
+        # .exclude(type=Account.INCOME_ACCOUNT)
+        # .exclude(type=Account.EXPENSE_ACCOUNT)
+        # .filter(
+        #     Q(type=Account.ASSET_ACCOUNT)
+        #     | Q(type=Account.EQUITY_ACCOUNT)
+        #     | Q(type=Account.LIABILITY_ACCOUNT)
         .prefetch_related("group")
+    ).values()
+
+    # Get all accounts for the group
+    accounts = Account.objects.filter(group=group).annotate(
+        normal_balance=Value(0, output_field=DecimalField())
     )
+    accounts = {a.id: a for a in accounts}
+
+    for id, account in accounts.items():
+        print(f"{id=} {account=}")
+        if account.id in balances:
+            print("found balance")
+            account.normal_balance = balances[account.id]["normal_balance"]
+        print(f"{account.name=} {account.normal_balance=}")
+    print("done")
 
     if hide_empty_active:
-        balances = balances.exclude(Q(active=True) & Q(normal_balance=0))
+        # balances = balances.exclude(Q(active=True) & Q(normal_balance=0))
+        accounts = {
+            k: v
+            for k, v in accounts.items()
+            if v.normal_balance != 0 and v.active
+        }
 
     if hide_empty_inactive:
         balances = balances.exclude(Q(active=False) & Q(normal_balance=0))
-
     # Balance sheet data struct
     accounts = {
         "as": [],
@@ -297,9 +320,12 @@ def balance(request: HttpRequest, group: Group, is_admin=False):
     member_positive_sum = 0
 
     for account in balances:
-        if account.group_account:
-            accounts[account.type.lower()].append(account)
-            account_sums[account.type.lower()] += account.normal_balance
+        # print(
+        #     f"{account.name=} {account.balance_change=} {account.normal_balance=}"
+        # )
+        if account["group_account"]:
+            accounts[account["type"].lower()].append(account)
+            account_sums[account["type"].lower()] += account.normal_balance
         else:
             if account.normal_balance > 0:
                 member_positive_sum += account.normal_balance
@@ -371,9 +397,9 @@ def income(request: HttpRequest, group: Group, is_admin=False):
         Account.historical_objects.with_balance_change(
             group=group, from_date=from_date, to_date=to_date
         )
-        .filter(
-            Q(type=Account.INCOME_ACCOUNT) | Q(type=Account.EXPENSE_ACCOUNT)
-        )
+        # .filter(
+        #     Q(type=Account.INCOME_ACCOUNT) | Q(type=Account.EXPENSE_ACCOUNT)
+        # )
         .prefetch_related("group")
     )
 
@@ -398,6 +424,9 @@ def income(request: HttpRequest, group: Group, is_admin=False):
 
     # Get balance change for all accounts
     for account in current_balances:
+        print(
+            f"{account.name=} {account.balance_change=} {account.normal_balance=}"
+        )
         if account.type == Account.INCOME_ACCOUNT:
             accounts["in"].append(account)
             account_sums["in"] += account.balance_change

@@ -15,6 +15,7 @@ from django.db.models import (
     DecimalField,
     OuterRef,
 )
+from django.db.models.functions import Coalesce
 from django.contrib.auth.models import User
 from django.urls import reverse
 from django.utils.encoding import smart_text
@@ -298,12 +299,6 @@ class HistoricalAccountManager(models.Manager):
             )
         )
 
-    def get_balance_changes(self, filters: Q):
-        """
-        Returns a queryset of accounts with balance changes in the
-        """
-        pass
-
     def with_balance_change(self, group: int, from_date: str, to_date: str):
         """
         Returns a queryset of accounts with their change in normalized balance
@@ -327,7 +322,7 @@ class HistoricalAccountManager(models.Manager):
                     F("sum_debit") - F("sum_credit"),
                     output_field=models.DecimalField(),
                 ),
-                balance_change=Case(
+                normal_balance=Case(
                     When(difference__isnull=True, then=Value(0)),
                     When(
                         type__in=[
@@ -339,17 +334,44 @@ class HistoricalAccountManager(models.Manager):
                     default=F("difference") * -1,
                     output_field=models.DecimalField(),
                 ),
+                # normal_balance=Case(
+                #     When(difference__isnull=True, then=Value(0)),
+                #     When(
+                #         type__in=[
+                #             Account.ASSET_ACCOUNT,
+                #             Account.EXPENSE_ACCOUNT,
+                #         ],
+                #         then="difference",
+                #     ),
+                #     default=F("difference") * -1,
+                #     output_field=models.DecimalField(),
+                # ),
             )
-            .filter(id=OuterRef("pk"))
+            # .filter(id=OuterRef("id"))
         )
+        # This bit is fast
+        return accounts_with_balance
+
+        # return self.filter(group=group).annotate(
+        #     balance_change=Value(0, output_field=models.DecimalField()),
+        #     normal_balance=Value(0, output_field=models.DecimalField()),
+        # )
 
         # Create a queryset of all accounts with their balance change
-        all_accounts = self.filter(group=group).annotate(
-            balance_change=Subquery(
-                accounts_with_balance.values("balance_change"),
-                output_field=models.DecimalField(),
-                default=0,
-            ),
+        # This bit is slow...
+        all_accounts = (
+            self.filter(group=group)
+            .annotate(
+                # balance_change=Subquery(
+                #     accounts_with_balance.values("balance_change"),
+                #     output_field=models.DecimalField(),
+                # ),
+                # normal_balance=F("balance_change"),
+                # normal_balance=Coalesce("balance_change", 0),
+                normal_balance=Value(0, output_field=models.DecimalField()),
+                balance_change=Value(0, output_field=models.DecimalField()),
+            )
+            .values()
         )
 
         return all_accounts
