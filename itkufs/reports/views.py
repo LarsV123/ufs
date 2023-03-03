@@ -277,7 +277,7 @@ def balance(request: HttpRequest, group: Group, is_admin=False):
         .select_related("group")
     )
 
-    # Get account balances at the given date for group accounts
+    # Get group account balances at the given date
     balances = (
         Account.historical_objects.with_balance_change(
             from_date="1929-10-01", to_date=date
@@ -414,25 +414,30 @@ def income(request: HttpRequest, group: Group, is_admin=False):
     else:
         raise ValueError("Invalid form data.")
 
-    current_balances = (
+    # Common filters for all queries in this view
+    filters = Q(group=group) & (
+        Q(type=Account.EXPENSE_ACCOUNT) | Q(type=Account.INCOME_ACCOUNT)
+    )
+
+    # Get all income and expense accounts
+    all_accounts = Account.objects.filter(filters).select_related("group")
+
+    # Get group account balance changes in the given range
+    balances = (
         Account.historical_objects.with_balance_change(
-            group=group, from_date=from_date, to_date=to_date
+            from_date=from_date, to_date=to_date
         )
-        # .filter(
-        #     Q(type=Account.INCOME_ACCOUNT) | Q(type=Account.EXPENSE_ACCOUNT)
-        # )
-        .prefetch_related("group")
+        .filter(filters)
+        .select_related("group")
     )
 
     if hide_empty_active:
-        current_balances = current_balances.exclude(
-            Q(active=True) & Q(balance_change=0)
-        )
+        balances = balances.exclude(Q(active=True) & Q(normal_balance=0))
 
     if hide_empty_inactive:
-        current_balances = current_balances.exclude(
-            Q(active=False) & Q(balance_change=0)
-        )
+        balances = balances.exclude(Q(active=False) & Q(normal_balance=0))
+
+    balances = {b["id"]: b for b in balances.values()}
 
     # Balance sheet data struct
     accounts = {"in": [], "ex": []}
@@ -443,18 +448,23 @@ def income(request: HttpRequest, group: Group, is_admin=False):
         "in_ex_diff": 0,
     }
 
-    # Get balance change for all accounts
-    for account in current_balances:
-        print(
-            f"{account.name=} {account.balance_change=} {account.normal_balance=}"
-        )
-        if account.type == Account.INCOME_ACCOUNT:
-            accounts["in"].append(account)
-            account_sums["in"] += account.balance_change
+    # Aggregate incomes and expenses
+    for account in all_accounts:
+        balance = 0
+        if account.id in balances:
+            balance = balances[account.id]["normal_balance"]
 
-        elif account.type == Account.EXPENSE_ACCOUNT:
-            accounts["ex"].append(account)
-            account_sums["ex"] += account.balance_change
+        if balance == 0 and hide_empty_active and account.active:
+            continue
+        if balance == 0 and hide_empty_inactive and not account.active:
+            continue
+
+        url = account.get_absolute_url()
+        account = model_to_dict(account)
+        account["balance_change"] = balance
+        account["get_absolute_url"] = url
+        accounts[account["type"].lower()].append(account)
+        account_sums[account["type"].lower()] += balance
 
     # Net income
     account_sums["in_ex_diff"] = account_sums["in"] - account_sums["ex"]
