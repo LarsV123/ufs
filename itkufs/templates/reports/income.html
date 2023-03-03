@@ -42,7 +42,7 @@
     <tr>
         <td>&nbsp;&nbsp;
             {% if is_admin %}
-                <a href="{{ account.get_absolute_url }}">{{ account.name }}</a>
+                <a href="{{ account.url }}">{{ account.name }}</a>
             {% else %}
                 {{ account.name }}
             {% endif %}
@@ -66,7 +66,7 @@
     <tr>
         <td>&nbsp;&nbsp;
             {% if is_admin %}
-                <a href="{{ account.get_absolute_url }}">{{ account.name }}</a>
+                <a href="{{ account.url }}">{{ account.name }}</a>
             {% else %}
                 {{ account.name }}
             {% endif %}

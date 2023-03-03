@@ -322,7 +322,7 @@ def balance(request: HttpRequest, group: Group, is_admin=False):
         url = account.get_absolute_url()
         account = model_to_dict(account)
         account["normal_balance"] = balance
-        account["get_absolute_url"] = url
+        account["url"] = url
         accounts[account["type"].lower()].append(account)
         account_sums[account["type"].lower()] += balance
 
@@ -462,7 +462,7 @@ def income(request: HttpRequest, group: Group, is_admin=False):
         url = account.get_absolute_url()
         account = model_to_dict(account)
         account["balance_change"] = balance
-        account["get_absolute_url"] = url
+        account["url"] = url
         accounts[account["type"].lower()].append(account)
         account_sums[account["type"].lower()] += balance
 
