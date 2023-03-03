@@ -287,8 +287,6 @@ def balance(request: HttpRequest, group: Group, is_admin=False):
         .exclude(type=Account.INCOME_ACCOUNT)
         .prefetch_related("group")
     )
-    # accounts = {a.id: a for a in accounts}
-    # ids = [a["id"] for a in balances.values()]
     balances = {b["id"]: b for b in balances.values()}
 
     # Balance sheet data struct
