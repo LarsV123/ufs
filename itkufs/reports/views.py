@@ -267,40 +267,43 @@ def balance(request: HttpRequest, group: Group, is_admin=False):
     balances = (
         Account.historical_objects.with_balance_change(
             group=group, from_date="1929-10-01", to_date=date
-        )
-        # .exclude(type=Account.INCOME_ACCOUNT)
+        ).filter(group_account=True)
         # .exclude(type=Account.EXPENSE_ACCOUNT)
         # .filter(
         #     Q(type=Account.ASSET_ACCOUNT)
         #     | Q(type=Account.EQUITY_ACCOUNT)
         #     | Q(type=Account.LIABILITY_ACCOUNT)
         .prefetch_related("group")
-    ).values()
-
-    # Get all accounts for the group
-    accounts = Account.objects.filter(group=group).annotate(
-        normal_balance=Value(0, output_field=DecimalField())
     )
-    accounts = {a.id: a for a in accounts}
-
-    for id, account in accounts.items():
-        print(f"{id=} {account=}")
-        if account.id in balances:
-            print("found balance")
-            account.normal_balance = balances[account.id]["normal_balance"]
-        print(f"{account.name=} {account.normal_balance=}")
-    print("done")
-
     if hide_empty_active:
-        # balances = balances.exclude(Q(active=True) & Q(normal_balance=0))
-        accounts = {
-            k: v
-            for k, v in accounts.items()
-            if v.normal_balance != 0 and v.active
-        }
+        balances = balances.exclude(Q(active=True) & Q(normal_balance=0))
 
     if hide_empty_inactive:
         balances = balances.exclude(Q(active=False) & Q(normal_balance=0))
+
+    # Get all accounts for the group
+    # accounts = Account.objects.filter(group=group).annotate(
+    #     normal_balance=Value(0, output_field=DecimalField())
+    # )
+    # accounts = {a.id: a for a in accounts}
+    # ids = [a["id"] for a in balances.values()]
+    balances = {b["id"]: b for b in balances.values()}
+    ids = list(balances.keys())
+    accounts = Account.objects.filter(pk__in=ids)
+
+    for b in balances:
+        print(b)
+
+    for account in accounts:
+        # print(f"{account} {account.id=}")
+        # print(f"{balances[account.id]=}")
+        print(f"{account=} {balances[account.id]['normal_balance']=}")
+        # if account.id in balances:
+        #     print("found balance")
+        #     account.normal_balance = balances[account.id]["normal_balance"]
+        # print(f"{account.name=} {account.normal_balance=}")
+    print("done")
+
     # Balance sheet data struct
     accounts = {
         "as": [],
@@ -316,21 +319,22 @@ def balance(request: HttpRequest, group: Group, is_admin=False):
     }
 
     # Aggregate member account liabilities
+    # TODO: Get these as separate queries
     member_negative_sum = 0
     member_positive_sum = 0
 
-    for account in balances:
-        # print(
-        #     f"{account.name=} {account.balance_change=} {account.normal_balance=}"
-        # )
-        if account["group_account"]:
-            accounts[account["type"].lower()].append(account)
-            account_sums[account["type"].lower()] += account.normal_balance
-        else:
-            if account.normal_balance > 0:
-                member_positive_sum += account.normal_balance
-            else:
-                member_negative_sum += account.normal_balance
+    # for account in balances:
+    #     # print(
+    #     #     f"{account.name=} {account.balance_change=} {account.normal_balance=}"
+    #     # )
+    #     if account["group_account"]:
+    #         accounts[account["type"].lower()].append(account)
+    #         account_sums[account["type"].lower()] += account.normal_balance
+    #     else:
+    #         if account.normal_balance > 0:
+    #             member_positive_sum += account.normal_balance
+    #         else:
+    #             member_negative_sum += account.normal_balance
 
     # Accumulated member accounts liabilities
     accounts["li"].append(
