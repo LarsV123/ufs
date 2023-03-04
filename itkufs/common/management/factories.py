@@ -42,7 +42,7 @@ class GroupAccountFactory(DjangoModelFactory):
     def short_name(self):
         return self.name.split()[0]
 
-    name = factory.Faker("text", max_nb_chars=20)
+    name = factory.Faker("sentence", nb_words=2)
     slug = factory.Sequence(lambda n: f"group-account-{n}")
     group = factory.SubFactory(GroupFactory)
     group_account = True

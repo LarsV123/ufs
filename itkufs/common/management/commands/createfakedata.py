@@ -156,7 +156,9 @@ class Command(BaseCommand):
         # Ratios for the number of objects to create
         GROUP_COUNT = options["groups"]
         USERS_PER_GROUP = options["users"]
-        GROUP_ACCOUNTS_PER_GROUP = options["group_accounts"]
+        GROUP_ACCOUNTS_PER_GROUP = (
+            options["group_accounts"] - 2
+        )  # 2 accounts are created by default
         TRANSACTIONS_PER_GROUP = options["transactions"]
         ENTRIES_PER_TRANSACTION = options["entries"]
 
@@ -172,23 +174,27 @@ class Command(BaseCommand):
 
         self.log.info("Generating new data...")
         # Create groups
-        groups = [GroupFactory() for _ in range(GROUP_COUNT)]
+        for _ in range(GROUP_COUNT):
+            GroupFactory()
 
-        for group in groups:
+        for group in Group.objects.all():
             self.log.info(f"Creating data for group '{group.name}'...")
 
             self.log.info("Creating user accounts...")
-            user_accounts = self.create_user_accounts(group, USERS_PER_GROUP)
+            self.create_user_accounts(group, USERS_PER_GROUP)
+            user_accounts = list(
+                Account.objects.filter(group=group, group_account=False)
+            )
 
             self.log.info("Creating group accounts...")
-            group_accounts = self.create_group_accounts(
-                group, GROUP_ACCOUNTS_PER_GROUP
+            self.create_group_accounts(group, GROUP_ACCOUNTS_PER_GROUP)
+            group_accounts = list(
+                Account.objects.filter(group=group, group_account=True)
             )
 
             self.log.info("Creating transactions...")
-            transactions = self.create_transactions(
-                group, TRANSACTIONS_PER_GROUP
-            )
+            self.create_transactions(group, TRANSACTIONS_PER_GROUP)
+            transactions = Transaction.objects.filter(group=group)
 
             # Split the transactions in two groups
             MID = int(TRANSACTIONS_PER_GROUP / 2)
