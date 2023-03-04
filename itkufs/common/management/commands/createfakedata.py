@@ -67,6 +67,7 @@ class Command(BaseCommand):
         logging.basicConfig(format=CONSOLE_LOG_FORMAT, level=logging.INFO)
         return logging.getLogger("createfakedata")
 
+    @transaction.atomic
     def create_user_accounts(self, group: Group, count: int):
         # Create a distribution of active and inactive accounts
         active = random.choices(
@@ -79,6 +80,7 @@ class Command(BaseCommand):
             user_accounts.append(user)
         return user_accounts
 
+    @transaction.atomic
     def create_group_accounts(self, group: Group, count: int):
         # Create a distribution of active and inactive accounts
         active = random.choices(
@@ -104,6 +106,7 @@ class Command(BaseCommand):
 
         return group_accounts
 
+    @transaction.atomic
     def create_transactions(self, group: Group, count: int):
         transactions: List["Transaction"] = []
         for _ in range(count):
@@ -112,6 +115,7 @@ class Command(BaseCommand):
 
         return transactions
 
+    @transaction.atomic
     def create_transaction_entries(
         self,
         transaction: Transaction,
@@ -151,7 +155,6 @@ class Command(BaseCommand):
             credit=credit,
         )
 
-    @transaction.atomic
     def handle(self, *args, **options):
         # Ratios for the number of objects to create
         GROUP_COUNT = options["groups"]
