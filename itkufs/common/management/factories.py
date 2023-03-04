@@ -45,7 +45,6 @@ class GroupAccountFactory(DjangoModelFactory):
     name = factory.Faker("text", max_nb_chars=20)
     slug = factory.Sequence(lambda n: f"group-account-{n}")
     group = factory.SubFactory(GroupFactory)
-    active = factory.Faker("pybool")
     group_account = True
 
 

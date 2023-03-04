@@ -1,6 +1,9 @@
 import random
+import logging
+from typing import List
 from django.db import transaction
 from django.core.management.base import BaseCommand
+from django.core.management.color import color_style
 from itkufs.accounting.models import (
     Group,
     Account,
@@ -17,6 +20,9 @@ from itkufs.common.management.factories import (
 )
 
 
+# TODO: Replace print with logging
+
+
 class Command(BaseCommand):
     help = "Generate fake data for testing the application"
 
@@ -30,13 +36,13 @@ class Command(BaseCommand):
         parser.add_argument(
             "--users",
             type=int,
-            default=100,
+            default=250,
             help="How many users will be created per group",
         )
         parser.add_argument(
             "--group-accounts",
             type=int,
-            default=20,
+            default=50,
             help="How many group accounts will be created per group",
         )
         parser.add_argument(
@@ -52,6 +58,99 @@ class Command(BaseCommand):
             help="How many entries will be created per transaction",
         )
 
+    def __init__(self):
+        self.log = self._setup_logging()
+        self.style = color_style()
+
+    def _setup_logging(self):
+        CONSOLE_LOG_FORMAT = "%(levelname)-8s %(message)s"
+        logging.basicConfig(format=CONSOLE_LOG_FORMAT, level=logging.INFO)
+        return logging.getLogger("createfakedata")
+
+    def create_user_accounts(self, group: Group, count: int):
+        # Create a distribution of active and inactive accounts
+        active = random.choices(
+            population=[True, False], weights=[0.5, 0.5], k=count
+        )
+
+        user_accounts: List["Account"] = []
+        for _ in range(count):
+            user = UserAccountFactory(group=group, active=active.pop())
+            user_accounts.append(user)
+        return user_accounts
+
+    def create_group_accounts(self, group: Group, count: int):
+        # Create a distribution of active and inactive accounts
+        active = random.choices(
+            population=[True, False], weights=[0.8, 0.2], k=count
+        )
+
+        # Randomly create accounts of different types
+        group_accounts: List["Account"] = []
+        for _ in range(count):
+            type = random.choice(
+                [
+                    Account.LIABILITY_ACCOUNT,
+                    Account.ASSET_ACCOUNT,
+                    Account.EQUITY_ACCOUNT,
+                    Account.INCOME_ACCOUNT,
+                    Account.EXPENSE_ACCOUNT,
+                ]
+            )
+            account = GroupAccountFactory(
+                group=group, type=type, active=active.pop()
+            )
+            group_accounts.append(account)
+
+        return group_accounts
+
+    def create_transactions(self, group: Group, count: int):
+        transactions: List["Transaction"] = []
+        for _ in range(count):
+            transaction = TransactionFactory(group=group)
+            transactions.append(transaction)
+
+        return transactions
+
+    def create_transaction_entries(
+        self,
+        transaction: Transaction,
+        count: int,
+        group_account: Account,
+        user_accounts: List["Account"],
+        debit_group=True,
+    ):
+        """
+        Create transaction entries for a transaction.
+        Debits or credits a group account and randomly credits or debits user accounts.
+        """
+        total = 0
+        users = random.sample(population=user_accounts, k=count - 1)
+
+        # Create entries for user accounts
+        for user_account in users:
+            amount = random.randint(1, 5000)
+            debit = amount if not debit_group else 0
+            credit = amount if debit_group else 0
+
+            TransactionEntryFactory(
+                transaction=transaction,
+                account=user_account,
+                debit=debit,
+                credit=credit,
+            )
+            total += amount
+
+        # Create the matching entry for the group account
+        debit = total if debit_group else 0
+        credit = total if not debit_group else 0
+        TransactionEntryFactory(
+            transaction=transaction,
+            account=group_account,
+            debit=debit,
+            credit=credit,
+        )
+
     @transaction.atomic
     def handle(self, *args, **options):
         # Ratios for the number of objects to create
@@ -61,98 +160,76 @@ class Command(BaseCommand):
         TRANSACTIONS_PER_GROUP = options["transactions"]
         ENTRIES_PER_TRANSACTION = options["entries"]
 
-        self.stdout.write("Deleting old data...")
-        models = [Group, Account, Transaction, TransactionEntry]
-        for m in models:
-            m.objects.all().delete()
+        self.log.info("Before adding fake data, existing data will be deleted.")
+        if input("Delete existing data? (y/n) ").lower() == "y":
+            self.log.info("Deleting old data...")
+            models = [Group, Account, Transaction, TransactionEntry]
+            for m in models:
+                m.objects.all().delete()
+        else:
+            self.log.info("Aborting...")
+            return
 
-        self.stdout.write("Generating new data...")
+        self.log.info("Generating new data...")
         # Create groups
         groups = [GroupFactory() for _ in range(GROUP_COUNT)]
 
         for group in groups:
-            # Create users
-            user_accounts = []
-            for _ in range(USERS_PER_GROUP):
-                user = UserAccountFactory(group=group)
-                user_accounts.append(user)
-            self.stdout.write(
-                f"Created {len(user_accounts)} users for {group.name}"
+            self.log.info(f"Creating data for group '{group.name}'...")
+
+            self.log.info("Creating user accounts...")
+            user_accounts = self.create_user_accounts(group, USERS_PER_GROUP)
+
+            self.log.info("Creating group accounts...")
+            group_accounts = self.create_group_accounts(
+                group, GROUP_ACCOUNTS_PER_GROUP
             )
 
-            # Create group accounts
-            group_accounts = []
-            for _ in range(GROUP_ACCOUNTS_PER_GROUP):
-                type = random.choice(
-                    [
-                        Account.LIABILITY_ACCOUNT,
-                        Account.ASSET_ACCOUNT,
-                        Account.EQUITY_ACCOUNT,
-                        Account.INCOME_ACCOUNT,
-                        Account.EXPENSE_ACCOUNT,
-                    ]
-                )
-                account = GroupAccountFactory(group=group, type=type)
-                group_accounts.append(account)
-            self.stdout.write(
-                f"Created {len(group_accounts)} group accounts for {group.name}"
-            )
-
-            # Create transactions
-            transactions = []
-            for _ in range(TRANSACTIONS_PER_GROUP):
-                transaction = TransactionFactory(group=group)
-                transactions.append(transaction)
-            self.stdout.write(
-                f"Created {len(transactions)} transactions for {group.name}"
+            self.log.info("Creating transactions...")
+            transactions = self.create_transactions(
+                group, TRANSACTIONS_PER_GROUP
             )
 
             # Split the transactions in two groups
             MID = int(TRANSACTIONS_PER_GROUP / 2)
 
+            # Pick a subset of users and group accounts for transactions
+            # This is to ensure some accounts are left empty/unused
+            user_count = int(USERS_PER_GROUP * 0.8)
+            included_users = random.sample(
+                population=user_accounts, k=user_count
+            )
+
+            group_account_count = int(GROUP_ACCOUNTS_PER_GROUP * 0.8)
+            included_group_accounts = random.sample(
+                population=group_accounts, k=group_account_count
+            )
+
+            self.log.info("Creating transaction entries...")
             # Create transactions which debit one group account
             for t in transactions[:MID]:
-                debit_account = random.choice(group_accounts)
-                total = 0
-
-                # Create credit entries
-                users = random.sample(
-                    population=user_accounts, k=ENTRIES_PER_TRANSACTION
-                )
-                for user in users:
-                    amount = random.randint(1, 5000)
-                    total += amount
-                    TransactionEntryFactory(
-                        transaction=t, account=user, debit=0, credit=amount
-                    )
-
-                # Create debit entry
-                TransactionEntryFactory(
-                    transaction=t, account=debit_account, debit=total, credit=0
+                group_account = random.choice(included_group_accounts)
+                self.create_transaction_entries(
+                    t,
+                    ENTRIES_PER_TRANSACTION,
+                    group_account,
+                    included_users,
+                    debit_group=True,
                 )
 
             # Create transactions which credit one group account
             for t in transactions[MID:]:
-                credit_account = random.choice(group_accounts)
-                total = 0
-
-                # Create debit entries
-                users = random.sample(
-                    population=user_accounts, k=ENTRIES_PER_TRANSACTION
-                )
-                for user in users:
-                    amount = random.randint(1, 5000)
-                    total += amount
-                    TransactionEntryFactory(
-                        transaction=t, account=user, debit=amount, credit=0
-                    )
-
-                # Create credit entry
-                TransactionEntryFactory(
-                    transaction=t, account=credit_account, debit=0, credit=total
+                group_account = random.choice(included_group_accounts)
+                self.create_transaction_entries(
+                    t,
+                    ENTRIES_PER_TRANSACTION,
+                    group_account,
+                    included_users,
+                    debit_group=False,
                 )
 
             # Set the final state of each transaction
+            self.log.info("Setting transaction states...")
             for t in transactions:
                 t.state = random.choices(
                     population=[
@@ -165,4 +242,14 @@ class Command(BaseCommand):
                 )[0]
                 t.save()
 
-        self.stdout.write("Done!")
+        group_count = Group.objects.count()
+        group_account_count = Account.objects.filter(group_account=True).count()
+        user_count = Account.objects.filter(group_account=False).count()
+        transaction_count = Transaction.objects.count()
+        entry_count = TransactionEntry.objects.count()
+        self.log.info("Finished generating fake data! There are now:")
+        self.log.info(f"    {group_count} groups")
+        self.log.info(f"    {group_account_count} group accounts")
+        self.log.info(f"    {user_count} user accounts")
+        self.log.info(f"    {transaction_count} transactions")
+        self.log.info(f"    {entry_count} transaction entries")
