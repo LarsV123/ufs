@@ -118,7 +118,7 @@ class Command(BaseCommand):
         transactions: List["Transaction"],
         group_accounts: List["Account"],
         user_accounts: List["Account"],
-        ENTRIES_PER_TRANSACTION: int,
+        entry_count: int,
     ):
         # Split the transactions in two groups
         MID = int(len(transactions) / 2)
@@ -129,7 +129,7 @@ class Command(BaseCommand):
             group_account = random.choice(group_accounts)
             self.create_transaction_entries(
                 t,
-                ENTRIES_PER_TRANSACTION,
+                entry_count,
                 group_account,
                 user_accounts,
                 debit_group=True,
@@ -142,7 +142,7 @@ class Command(BaseCommand):
             group_account = random.choice(group_accounts)
             self.create_transaction_entries(
                 t,
-                ENTRIES_PER_TRANSACTION,
+                entry_count,
                 group_account,
                 user_accounts,
                 debit_group=False,
