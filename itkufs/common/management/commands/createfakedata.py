@@ -115,6 +115,51 @@ class Command(BaseCommand):
 
         return transactions
 
+    def fill_transactions(
+        self,
+        transactions: List["Transaction"],
+        group_accounts: List["Account"],
+        user_accounts: List["Account"],
+        ENTRIES_PER_TRANSACTION: int,
+    ):
+        # Split the transactions in two groups
+        MID = int(len(transactions) / 2)
+        # Create transactions which debit one group account
+        for t in transactions[:MID]:
+            group_account = random.choice(group_accounts)
+            self.create_transaction_entries(
+                t,
+                ENTRIES_PER_TRANSACTION,
+                group_account,
+                user_accounts,
+                debit_group=True,
+            )
+            self.finalize_transaction(t)
+
+        # Create transactions which credit one group account
+        for t in transactions[MID:]:
+            group_account = random.choice(group_accounts)
+            self.create_transaction_entries(
+                t,
+                ENTRIES_PER_TRANSACTION,
+                group_account,
+                user_accounts,
+                debit_group=False,
+            )
+            self.finalize_transaction(t)
+
+    def finalize_transaction(self, transaction: Transaction):
+        transaction.state = random.choices(
+            population=[
+                Transaction.PENDING_STATE,
+                Transaction.COMMITTED_STATE,
+                Transaction.REJECTED_STATE,
+            ],
+            weights=[0.05, 0.85, 0.1],
+            k=1,
+        )[0]
+        transaction.save()
+
     @transaction.atomic
     def create_transaction_entries(
         self,
@@ -199,9 +244,6 @@ class Command(BaseCommand):
             self.create_transactions(group, TRANSACTIONS_PER_GROUP)
             transactions = Transaction.objects.filter(group=group)
 
-            # Split the transactions in two groups
-            MID = int(TRANSACTIONS_PER_GROUP / 2)
-
             # Pick a subset of users and group accounts for transactions
             # This is to ensure some accounts are left empty/unused
             user_count = int(USERS_PER_GROUP * 0.8)
@@ -214,42 +256,13 @@ class Command(BaseCommand):
                 population=group_accounts, k=group_account_count
             )
 
-            self.log.info("Creating transaction entries...")
-            # Create transactions which debit one group account
-            for t in transactions[:MID]:
-                group_account = random.choice(included_group_accounts)
-                self.create_transaction_entries(
-                    t,
-                    ENTRIES_PER_TRANSACTION,
-                    group_account,
-                    included_users,
-                    debit_group=True,
-                )
-
-            # Create transactions which credit one group account
-            for t in transactions[MID:]:
-                group_account = random.choice(included_group_accounts)
-                self.create_transaction_entries(
-                    t,
-                    ENTRIES_PER_TRANSACTION,
-                    group_account,
-                    included_users,
-                    debit_group=False,
-                )
-
-            # Set the final state of each transaction
-            self.log.info("Setting transaction states...")
-            for t in transactions:
-                t.state = random.choices(
-                    population=[
-                        Transaction.PENDING_STATE,
-                        Transaction.COMMITTED_STATE,
-                        Transaction.REJECTED_STATE,
-                    ],
-                    weights=[0.05, 0.85, 0.1],
-                    k=1,
-                )[0]
-                t.save()
+            self.log.info("Filling transactions with entries...")
+            self.fill_transactions(
+                transactions,
+                included_group_accounts,
+                included_users,
+                ENTRIES_PER_TRANSACTION,
+            )
 
         group_count = Group.objects.count()
         group_account_count = Account.objects.filter(group_account=True).count()
