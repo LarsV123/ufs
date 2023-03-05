@@ -1,6 +1,7 @@
 import random
 import logging
 from typing import List
+from tqdm import tqdm
 from django.db import transaction
 from django.core.management.base import BaseCommand
 from django.core.management.color import color_style
@@ -18,9 +19,6 @@ from itkufs.common.management.factories import (
     TransactionFactory,
     TransactionEntryFactory,
 )
-
-
-# TODO: Replace print with logging
 
 
 class Command(BaseCommand):
@@ -75,7 +73,7 @@ class Command(BaseCommand):
         )
 
         user_accounts: List["Account"] = []
-        for _ in range(count):
+        for _ in tqdm(range(count)):
             user = UserAccountFactory(group=group, active=active.pop())
             user_accounts.append(user)
         return user_accounts
@@ -89,7 +87,7 @@ class Command(BaseCommand):
 
         # Randomly create accounts of different types
         group_accounts: List["Account"] = []
-        for _ in range(count):
+        for _ in tqdm(range(count)):
             type = random.choice(
                 [
                     Account.LIABILITY_ACCOUNT,
@@ -109,7 +107,7 @@ class Command(BaseCommand):
     @transaction.atomic
     def create_transactions(self, group: Group, count: int):
         transactions: List["Transaction"] = []
-        for _ in range(count):
+        for _ in tqdm(range(count)):
             transaction = TransactionFactory(group=group)
             transactions.append(transaction)
 
@@ -124,6 +122,8 @@ class Command(BaseCommand):
     ):
         # Split the transactions in two groups
         MID = int(len(transactions) / 2)
+        pbar = tqdm(total=len(transactions), desc="Creating transaction data")
+
         # Create transactions which debit one group account
         for t in transactions[:MID]:
             group_account = random.choice(group_accounts)
@@ -135,6 +135,7 @@ class Command(BaseCommand):
                 debit_group=True,
             )
             self.finalize_transaction(t)
+            pbar.update(1)
 
         # Create transactions which credit one group account
         for t in transactions[MID:]:
@@ -147,6 +148,8 @@ class Command(BaseCommand):
                 debit_group=False,
             )
             self.finalize_transaction(t)
+            pbar.update(1)
+        pbar.close()
 
     def finalize_transaction(self, transaction: Transaction):
         transaction.state = random.choices(
@@ -221,8 +224,9 @@ class Command(BaseCommand):
             return
 
         self.log.info("Generating new data...")
+
         # Create groups
-        for _ in range(GROUP_COUNT):
+        for _ in tqdm(range(GROUP_COUNT)):
             GroupFactory()
 
         for group in Group.objects.all():
