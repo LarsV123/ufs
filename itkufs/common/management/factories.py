@@ -39,10 +39,13 @@ class GroupAccountFactory(DjangoModelFactory):
         model = Account
 
     @factory.lazy_attribute
-    def short_name(self):
-        return self.name.split()[0]
+    def name(self):
+        return factory.Sequence(lambda n: f"Account {n} ({self.type})")
 
-    name = factory.Faker("text", max_nb_chars=12)
+    @factory.lazy_attribute
+    def short_name(self):
+        return self.name
+
     slug = factory.Sequence(lambda n: f"group-account-{n}")
     group = factory.SubFactory(GroupFactory)
     group_account = True
