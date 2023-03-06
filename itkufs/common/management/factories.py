@@ -38,13 +38,13 @@ class GroupAccountFactory(DjangoModelFactory):
     class Meta:
         model = Account
 
-    @factory.lazy_attribute
-    def name(self):
-        return factory.Sequence(lambda n: f"Account {n} ({self.type})")
+    short_name = factory.Sequence(lambda n: f"Account {n}")
 
     @factory.lazy_attribute
-    def short_name(self):
-        return self.name
+    def name(self):
+        active = "active" if self.active else "inactive"
+        type = self.type
+        return f"{self.short_name} ({type} / {active})"
 
     slug = factory.Sequence(lambda n: f"group-account-{n}")
     group = factory.SubFactory(GroupFactory)

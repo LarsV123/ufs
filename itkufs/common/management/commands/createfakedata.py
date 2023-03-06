@@ -81,24 +81,25 @@ class Command(BaseCommand):
     @transaction.atomic
     def create_group_accounts(self, group: Group, count: int):
         # Create a distribution of active and inactive accounts
-        active = random.choices(
+        states = random.choices(
             population=[True, False], weights=[0.8, 0.2], k=count
+        )
+        types = random.choices(
+            population=[
+                Account.LIABILITY_ACCOUNT,
+                Account.ASSET_ACCOUNT,
+                Account.EQUITY_ACCOUNT,
+                Account.INCOME_ACCOUNT,
+                Account.EXPENSE_ACCOUNT,
+            ],
+            k=count,
         )
 
         # Randomly create accounts of different types
         group_accounts: List["Account"] = []
         for _ in tqdm(range(count)):
-            type = random.choice(
-                [
-                    Account.LIABILITY_ACCOUNT,
-                    Account.ASSET_ACCOUNT,
-                    Account.EQUITY_ACCOUNT,
-                    Account.INCOME_ACCOUNT,
-                    Account.EXPENSE_ACCOUNT,
-                ]
-            )
             account = GroupAccountFactory(
-                group=group, type=type, active=active.pop()
+                group=group, type=types.pop(), active=states.pop()
             )
             group_accounts.append(account)
 
